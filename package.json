@@ -6,7 +6,8 @@
     "start:dev": "nodemon --watch src src/main.js",
     "start": "node src/main.js",
     "migrate": "node src/infra/postgres/migrate.js",
-    "contracts:export": "node scripts/export-contracts.mjs"
+    "contracts:export": "node scripts/export-contracts.mjs",
+    "lint": "oxlint"
   },
   "dependencies": {
     "argon2": "^0.45.1",
@@ -21,6 +22,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "oxlint": "^1.79.0"
   }
 }
