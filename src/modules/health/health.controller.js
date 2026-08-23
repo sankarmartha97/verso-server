@@ -1,12 +1,20 @@
 // Liveness/readiness probe.
-const { Controller, Get } = require('@nestjs/common');
+const pool = require('../../infra/postgres/pool.js');
 
-@Controller('health')
-class HealthController {
-  @Get()
-  check() {
-    return { status: 'ok', service: 'verso-server', time: new Date().toISOString() };
+async function checkHealth(req, res) {
+  let db = 'ok';
+  try {
+    await pool.query('SELECT 1');
+  } catch {
+    db = 'unreachable';
   }
+
+  res.json({
+    status: 'ok',
+    service: 'verso-server',
+    time: new Date().toISOString(),
+    db,
+  });
 }
 
-module.exports = { HealthController };
+module.exports = { checkHealth };

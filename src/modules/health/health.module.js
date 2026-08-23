@@ -1,8 +1,8 @@
-// Health module.
-const { Module } = require('@nestjs/common');
-const { HealthController } = require('./health.controller.js');
+// Health module: wires the /health route to its controller.
+const express = require('express');
+const { checkHealth } = require('./health.controller.js');
 
-@Module({ controllers: [HealthController] })
-class HealthModule {}
+const router = express.Router();
+router.get('/', checkHealth);
 
-module.exports = { HealthModule };
+module.exports = router;

@@ -1,13 +1,8 @@
-// Bootstrap Nest app.
-require('reflect-metadata');
-const { NestFactory } = require('@nestjs/core');
-const { AppModule } = require('./app.module.js');
+// Bootstrap: load .env, create the Express app, start listening.
+require('dotenv').config();
+const app = require('./app.js');
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.enableCors({ origin: process.env.CORS_ORIGIN || '*' });
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
   console.log(`verso-server listening on :${port}`);
-}
-bootstrap();
+});
