@@ -1,11 +1,15 @@
 const authService = require('./auth.service.js');
 
 const REFRESH_COOKIE = 'refreshToken';
+// path: '/' (not '/auth') -- the client calls through a proxy prefix
+// (VITE_API_URL, e.g. /api) that the proxy strips server-side but the
+// browser never sees stripped, so a cookie scoped to '/auth' would never
+// actually match the request path the browser sends it against.
 const REFRESH_COOKIE_OPTS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax',
-  path: '/auth',
+  path: '/',
   maxAge: 30 * 24 * 60 * 60 * 1000,
 };
 
@@ -40,7 +44,7 @@ async function refresh(req, res) {
 
 async function logout(req, res) {
   await authService.logout(req.cookies[REFRESH_COOKIE]);
-  res.clearCookie(REFRESH_COOKIE, { path: '/auth' });
+  res.clearCookie(REFRESH_COOKIE, { path: '/' });
   res.status(204).end();
 }
 
