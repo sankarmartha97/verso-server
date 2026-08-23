@@ -1,0 +1,27 @@
+{
+  "name": "verso-server",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start:dev": "nodemon --watch src --exec node run.js",
+    "start": "node dist/main.js",
+    "build": "babel src -d dist"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.22",
+    "@nestjs/core": "^10.4.22",
+    "@nestjs/platform-express": "^10.4.22",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/node": "^8.0.1",
+    "@babel/plugin-proposal-decorators": "^8.0.2",
+    "@babel/plugin-transform-class-properties": "^8.0.1",
+    "@babel/preset-env": "^8.0.2",
+    "@babel/register": "^8.0.1",
+    "babel-plugin-transform-typescript-metadata": "^0.4.0",
+    "nodemon": "^3.1.14"
+  }
+}
