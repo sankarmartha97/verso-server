@@ -62,6 +62,18 @@ class DocumentRepository extends BaseRepository {
     return { rows, nextCursor };
   }
 
+  // Like findById, but computes `starred` for an arbitrary caller (not just
+  // the owner) -- starring is per-user, so a shared document's starred flag
+  // depends on who's asking, not just whether the row exists.
+  async findByIdWithStarred(id, userId) {
+    const { rows } = await this.pool.query(
+      `SELECT d.*, EXISTS (SELECT 1 FROM stars s WHERE s.user_id = $1 AND s.document_id = d.id) AS starred
+       FROM documents d WHERE d.id = $2`,
+      [userId, id],
+    );
+    return rows[0] || null;
+  }
+
   async findByIdForOwner(id, ownerId) {
     const { rows } = await this.pool.query(
       `SELECT d.*, EXISTS (SELECT 1 FROM stars s WHERE s.user_id = $1 AND s.document_id = d.id) AS starred

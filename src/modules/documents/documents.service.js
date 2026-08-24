@@ -1,14 +1,21 @@
 // Document business logic: title defaults/limits, folder-ownership checks,
 // the star/recent side-effects, and the soft-delete/restore/purge lifecycle.
+// Access is now role-based (Phase 5) rather than strictly owner-only --
+// every read/write path resolves the caller's role via permissions/policy.js
+// and checks the matching capability, so REST and the sync WebSocket (which
+// goes through the same policy module) can never enforce different rules.
 const pool = require('../../infra/postgres/pool.js');
 const DocumentRepository = require('./document.repository.js');
 const FolderRepository = require('../folders/folder.repository.js');
+const PermissionRepository = require('../permissions/permission.repository.js');
+const policy = require('../permissions/policy.js');
 const { ForbiddenError, NotFoundError } = require('../../common/errors.js');
 
 const documentRepository = new DocumentRepository(pool);
 const folderRepository = new FolderRepository(pool);
+const permissionRepository = new PermissionRepository(pool);
 
-function toSafeDocument(doc) {
+function toSafeDocument(doc, role) {
   return {
     id: doc.id,
     title: doc.title,
@@ -21,7 +28,21 @@ function toSafeDocument(doc) {
     isDeleted: doc.is_deleted,
     deletedAt: doc.deleted_at,
     starred: doc.starred ?? false,
+    role: role || 'owner',
   };
+}
+
+// Loads a document by id (no owner filter, `starred` computed for this
+// specific caller) and checks they have at least `action` capability on it
+// -- the shared entry point every non-owner-only method below goes through.
+async function loadForUser(userId, id, action) {
+  const doc = await documentRepository.findByIdWithStarred(id, userId);
+  if (!doc || doc.is_deleted) throw new NotFoundError('Document not found');
+
+  const role = await policy.resolveRole(userId, doc);
+  if (!policy.can(role, action)) throw new ForbiddenError('You do not have access to this document');
+
+  return { doc, role };
 }
 
 async function assertOwned(ownerId, id) {
@@ -38,7 +59,10 @@ async function assertFolderOwned(ownerId, folderId) {
 }
 
 async function list(ownerId, { folderId, starred, shared, q, sort, cursor, limit }) {
-  if (shared === 'true') return { documents: [], nextCursor: null };
+  if (shared === 'true') {
+    const rows = await permissionRepository.listSharedWithUser(ownerId, { limit: limit ? Number(limit) : 50 });
+    return { documents: rows.map((row) => toSafeDocument(row, row.permission_role)), nextCursor: null };
+  }
 
   const { rows, nextCursor } = await documentRepository.list({
     ownerId,
@@ -49,23 +73,23 @@ async function list(ownerId, { folderId, starred, shared, q, sort, cursor, limit
     cursor,
     limit,
   });
-  return { documents: rows.map(toSafeDocument), nextCursor };
+  return { documents: rows.map((row) => toSafeDocument(row, 'owner')), nextCursor };
 }
 
 async function listTrash(ownerId) {
   const { rows } = await documentRepository.list({ ownerId, trashed: true, limit: 100 });
-  return rows.map(toSafeDocument);
+  return rows.map((row) => toSafeDocument(row, 'owner'));
 }
 
 async function listRecent(ownerId) {
   const rows = await documentRepository.listRecent(ownerId);
-  return rows.map(toSafeDocument);
+  return rows.map((row) => toSafeDocument(row, 'owner'));
 }
 
-async function getById(ownerId, id) {
-  const doc = await assertOwned(ownerId, id);
-  await documentRepository.touchRecent(ownerId, id);
-  return toSafeDocument(doc);
+async function getById(userId, id) {
+  const { doc, role } = await loadForUser(userId, id, 'view');
+  await documentRepository.touchRecent(userId, id);
+  return toSafeDocument(doc, role);
 }
 
 async function create(ownerId, { title, folderId }) {
@@ -76,36 +100,42 @@ async function create(ownerId, { title, folderId }) {
     folder_id: folderId || null,
     last_edited_by: ownerId,
   });
-  return toSafeDocument({ ...doc, starred: false });
+  return toSafeDocument({ ...doc, starred: false }, 'owner');
 }
 
-async function update(ownerId, id, { title, folderId, starred }) {
-  await assertOwned(ownerId, id);
+async function update(userId, id, { title, folderId, starred }) {
+  const { doc, role } = await loadForUser(userId, id, starred !== undefined ? 'view' : 'edit');
 
   const patch = {};
-  if (title !== undefined) patch.title = title.trim() || 'Untitled';
+  if (title !== undefined) {
+    if (!policy.can(role, 'edit')) throw new ForbiddenError('You do not have edit access to this document');
+    patch.title = title.trim() || 'Untitled';
+  }
   if (folderId !== undefined) {
-    await assertFolderOwned(ownerId, folderId);
+    // Folder moves are owner-only: folders aren't shared in this app, so a
+    // collaborator has nowhere of their own to move a shared doc into.
+    if (role !== 'owner') throw new ForbiddenError('Only the owner can move this document');
+    await assertFolderOwned(userId, folderId);
     patch.folder_id = folderId;
   }
   if (Object.keys(patch).length > 0) {
     patch.last_edited_at = new Date();
-    patch.last_edited_by = ownerId;
+    patch.last_edited_by = userId;
     patch.updated_at = new Date();
     await documentRepository.update(id, patch);
   }
 
-  if (starred === true) await documentRepository.star(ownerId, id);
-  if (starred === false) await documentRepository.unstar(ownerId, id);
+  if (starred === true) await documentRepository.star(userId, id);
+  if (starred === false) await documentRepository.unstar(userId, id);
 
-  const updated = await assertOwned(ownerId, id);
-  return toSafeDocument(updated);
+  const updated = await documentRepository.findByIdWithStarred(id, userId);
+  return toSafeDocument(updated, role);
 }
 
-async function duplicate(ownerId, id) {
-  await assertOwned(ownerId, id);
-  const doc = await documentRepository.duplicate(id, ownerId);
-  return toSafeDocument({ ...doc, starred: false });
+async function duplicate(userId, id) {
+  await loadForUser(userId, id, 'view');
+  const doc = await documentRepository.duplicate(id, userId);
+  return toSafeDocument({ ...doc, starred: false }, 'owner');
 }
 
 async function remove(ownerId, id) {

@@ -6,6 +6,7 @@ const pool = require('../../infra/postgres/pool.js');
 const UserRepository = require('../users/user.repository.js');
 const { toSafeUser } = UserRepository;
 const SessionRepository = require('./session.repository.js');
+const PermissionRepository = require('../permissions/permission.repository.js');
 const {
   signAccessToken,
   signRefreshToken,
@@ -19,6 +20,7 @@ const { AuthError, ConflictError, NotFoundError } = require('../../common/errors
 
 const userRepository = new UserRepository(pool);
 const sessionRepository = new SessionRepository(pool);
+const permissionRepository = new PermissionRepository(pool);
 
 const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1h
@@ -66,6 +68,10 @@ async function signup({ email, password, name }, meta) {
     subject: 'Verify your Verso account',
     html: `<p>Welcome to Verso. Verify your email:</p><p><a href="${CLIENT_ORIGIN}/verify-email?token=${verifyToken}">${CLIENT_ORIGIN}/verify-email?token=${verifyToken}</a></p>`,
   });
+
+  // Any documents shared to this email address before the account existed
+  // (a pending invite, permissions.user_id NULL) become real grants now.
+  await permissionRepository.resolvePendingInvites(user.id, user.email);
 
   const tokens = await issueTokens(user, meta);
   return { user: toSafeUser(user), ...tokens };

@@ -1,10 +1,11 @@
-// Redis pub/sub fan-out across server instances, one channel per active
-// room. A subscriber connection in ioredis can't also issue normal commands,
-// so this owns a second, dedicated connection distinct from
-// infra/redis/client.js (which rate-limit.middleware.js already uses for
+// Redis pub/sub fan-out across server instances -- one channel per active
+// sync room, and also used by the permissions module to push live
+// permission-changed events. A subscriber connection in ioredis can't also
+// issue normal commands, so this owns a second, dedicated connection
+// distinct from client.js (which rate-limit.middleware.js already uses for
 // plain commands) -- publishing can reuse that shared client.
 const Redis = require('ioredis');
-const redis = require('../../infra/redis/client.js');
+const redis = require('./client.js');
 
 const subscriber = new Redis(process.env.REDIS_URL);
 const handlers = new Map(); // channel -> handler(Buffer)

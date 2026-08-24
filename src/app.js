@@ -11,6 +11,7 @@ const foldersModule = require('./modules/folders/folders.module.js');
 const documentsModule = require('./modules/documents/documents.module.js');
 const documentsController = require('./modules/documents/documents.controller.js');
 const uploadsModule = require('./modules/uploads/uploads.module.js');
+const permissionsModule = require('./modules/permissions/permissions.module.js');
 const jwtAuth = require('./common/jwt-auth.middleware.js');
 const validate = require('./common/validate.middleware.js');
 const { searchQuerySchema } = require('./contracts/schemas/document.schema.js');
@@ -27,6 +28,7 @@ app.use('/auth', authModule);
 app.use('/', usersModule);
 app.use('/folders', foldersModule);
 app.use('/documents', documentsModule);
+app.use('/documents', permissionsModule);
 app.get('/search', jwtAuth, validate(searchQuerySchema, 'query'), documentsController.search);
 app.use('/uploads', uploadsModule);
 

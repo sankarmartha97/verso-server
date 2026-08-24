@@ -9,11 +9,13 @@ const awarenessProtocol = require('y-protocols/awareness');
 const encoding = require('lib0/encoding');
 const yjsPersistence = require('./yjs-persistence.service.js');
 const syncRepository = require('./sync.repository.js');
-const pubsub = require('./redis-pubsub.service.js');
+const pubsub = require('../../infra/redis/pubsub.js');
+const policy = require('../permissions/policy.js');
 
 const REDIS_ORIGIN = 'redis';
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
+const MESSAGE_PERMISSION = 4; // 2 and 3 are y-websocket's own messageAuth/messageQueryAwareness -- avoid colliding
 
 const rooms = new Map();
 
@@ -23,6 +25,10 @@ function syncChannel(documentId) {
 
 function awarenessChannel(documentId) {
   return `doc:${documentId}:awareness`;
+}
+
+function permissionChannel(documentId) {
+  return `doc:${documentId}:permission`;
 }
 
 // Awareness always seeds a local entry for its own clientID on construction
@@ -104,8 +110,33 @@ async function getOrCreateRoom(documentId) {
   await pubsub.subscribe(awarenessChannel(documentId), (buffer) => {
     awarenessProtocol.applyAwarenessUpdate(room.awareness, buffer, REDIS_ORIGIN);
   });
+  await pubsub.subscribe(permissionChannel(documentId), (buffer) => {
+    const { userId, role } = JSON.parse(buffer.toString());
+    applyPermissionChange(room, userId, role);
+  });
 
   return room;
+}
+
+// Live enforcement of a permission change (invite/change/revoke) for
+// whichever of that user's connections are open on THIS server instance --
+// every instance with the room open runs this independently off the same
+// Redis message, so it's correct regardless of which node the affected
+// user is connected to. A role that no longer carries view access ejects
+// the connection outright; anything else just updates ws.role in place and
+// tells the client so it can flip to read-only without reconnecting.
+function applyPermissionChange(room, userId, role) {
+  for (const client of room.clients) {
+    if (client.userId !== userId) continue;
+
+    if (!policy.can(role, 'view')) {
+      client.close(4403, 'Access revoked');
+      continue;
+    }
+
+    client.role = role;
+    if (client.readyState === client.OPEN) client.send(encodePermissionMessage(role));
+  }
 }
 
 function addClient(room, ws) {
@@ -125,6 +156,7 @@ async function removeClient(room, ws) {
     rooms.delete(room.documentId);
     await pubsub.unsubscribe(syncChannel(room.documentId));
     await pubsub.unsubscribe(awarenessChannel(room.documentId));
+    await pubsub.unsubscribe(permissionChannel(room.documentId));
   }
 }
 
@@ -147,6 +179,13 @@ function encodeAwarenessMessage(update) {
   const encoder = encoding.createEncoder();
   encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
   encoding.writeVarUint8Array(encoder, update);
+  return encoding.toUint8Array(encoder);
+}
+
+function encodePermissionMessage(role) {
+  const encoder = encoding.createEncoder();
+  encoding.writeVarUint(encoder, MESSAGE_PERMISSION);
+  encoding.writeVarString(encoder, JSON.stringify({ role }));
   return encoding.toUint8Array(encoder);
 }
 

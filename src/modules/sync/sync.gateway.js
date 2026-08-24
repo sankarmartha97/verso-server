@@ -1,13 +1,21 @@
 // WebSocket message handling for one connection: auth -> join room -> sync
 // handshake -> relay y-protocols/sync + awareness messages per the standard
 // message-type-byte protocol (wire-compatible with the y-websocket client).
+// Authorization goes through permissions/policy.js -- the same module the
+// REST routes use -- so a role change is enforced identically on both
+// surfaces, and an incoming write is rejected here (not just hidden by the
+// client's UI) if the connection's role doesn't carry edit capability.
 const syncProtocol = require('y-protocols/sync');
 const awarenessProtocol = require('y-protocols/awareness');
 const encoding = require('lib0/encoding');
 const decoding = require('lib0/decoding');
 const pool = require('../../infra/postgres/pool.js');
+const DocumentRepository = require('../documents/document.repository.js');
+const policy = require('../permissions/policy.js');
 const { verifyAccessToken } = require('../auth/token.service.js');
 const roomManager = require('./room-manager.js');
+
+const documentRepository = new DocumentRepository(pool);
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
@@ -22,13 +30,13 @@ async function authenticate(documentId, token) {
     return null;
   }
 
-  const { rows } = await pool.query(
-    'SELECT 1 FROM documents WHERE id = $1 AND owner_id = $2 AND is_deleted = false',
-    [documentId, payload.sub],
-  );
-  if (rows.length === 0) return null;
+  const doc = await documentRepository.findById(documentId);
+  if (!doc || doc.is_deleted) return null;
 
-  return payload.sub;
+  const role = await policy.resolveRole(payload.sub, doc);
+  if (!policy.can(role, 'view')) return null;
+
+  return { userId: payload.sub, role };
 }
 
 function sendSyncStep1(ws, ydoc) {
@@ -51,12 +59,24 @@ function sendAwarenessStates(ws, awareness) {
   ws.send(encoding.toUint8Array(encoder));
 }
 
+// A sync message's second varUint (its y-protocols/sync subtype) tells apart
+// a read (step1: "here's my state vector") from a write (step2/update:
+// "here's content to merge in"). Peeked from a fresh decoder over the same
+// buffer so the real dispatch below still reads from byte zero.
+function isSyncWrite(data) {
+  const peek = decoding.createDecoder(data);
+  decoding.readVarUint(peek); // outer message type, already known to be MESSAGE_SYNC
+  const subtype = decoding.readVarUint(peek);
+  return subtype === 1 || subtype === 2; // messageYjsSyncStep2 | messageYjsUpdate
+}
+
 function handleMessage(ws, room, data) {
   const decoder = decoding.createDecoder(data);
   const messageType = decoding.readVarUint(decoder);
 
   switch (messageType) {
     case MESSAGE_SYNC: {
+      if (isSyncWrite(data) && !policy.can(ws.role, 'edit')) return; // defense in depth: the client UI already blocks this
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MESSAGE_SYNC);
       syncProtocol.readSyncMessage(decoder, encoder, room.ydoc, ws);
@@ -70,12 +90,13 @@ function handleMessage(ws, room, data) {
 }
 
 async function handleConnection(ws, documentId, token) {
-  const userId = await authenticate(documentId, token);
-  if (!userId) {
+  const auth = await authenticate(documentId, token);
+  if (!auth) {
     ws.close(4401, 'Unauthorized');
     return;
   }
-  ws.userId = userId;
+  ws.userId = auth.userId;
+  ws.role = auth.role;
 
   const room = await roomManager.getOrCreateRoom(documentId);
   roomManager.addClient(room, ws);
