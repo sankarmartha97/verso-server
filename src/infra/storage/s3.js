@@ -1,12 +1,16 @@
-// S3-compatible object storage (MinIO in dev). AWS SDK v3 works against MinIO
-// unmodified with forcePathStyle.
+// S3-compatible object storage (MinIO in dev). AWS SDK v3 works against any
+// S3-compatible provider unmodified with forcePathStyle -- region used to be
+// hardcoded to 'us-east-1' (MinIO ignores it), but a real provider's request
+// signing (AWS SigV4) incorporates the region into the signature, so a
+// mismatch against the bucket's actual region breaks auth even with correct
+// credentials. S3_REGION makes it configurable per provider.
 const { S3Client, CreateBucketCommand, HeadBucketCommand, PutBucketPolicyCommand } = require('@aws-sdk/client-s3');
 
 const bucket = process.env.S3_BUCKET;
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT,
-  region: 'us-east-1',
+  region: process.env.S3_REGION || 'us-east-1',
   forcePathStyle: true,
   credentials: {
     accessKeyId: process.env.S3_KEY,

@@ -17,7 +17,13 @@ async function sign(req, res) {
     { expiresIn: 300 },
   );
 
-  const fileUrl = `${process.env.S3_ENDPOINT}/${bucket}/${key}`;
+  // The S3 API endpoint (used above for the signed PUT) isn't necessarily
+  // where the provider serves public GETs from -- true for MinIO and R2,
+  // but Supabase Storage's S3-compatible endpoint is upload/management
+  // only; public files live under a different path on a different host.
+  // S3_PUBLIC_URL_BASE overrides it for providers where the two diverge.
+  const publicBase = process.env.S3_PUBLIC_URL_BASE || process.env.S3_ENDPOINT;
+  const fileUrl = `${publicBase}/${bucket}/${key}`;
 
   res.json({ uploadUrl, fileUrl });
 }
