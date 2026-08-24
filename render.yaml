@@ -15,8 +15,13 @@ services:
     runtime: node
     plan: free
     buildCommand: npm install
-    startCommand: npm run start
-    preDeployCommand: npm run migrate
+    # preDeployCommand is a paid-plan-only feature on Render, so migrations
+    # run as part of startCommand instead -- migrate.js is idempotent
+    # (tracks applied migrations in schema_migrations, skips what's already
+    # there), so running it on every boot is safe, not just on real schema
+    # changes. It exits and releases its own pool before `start` launches
+    # as a separate process, so there's no shared-connection conflict.
+    startCommand: npm run migrate && npm run start
     envVars:
       - key: NODE_ENV
         value: production
