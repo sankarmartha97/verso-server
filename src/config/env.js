@@ -11,6 +11,7 @@ const schema = z.object({
   JWT_ACCESS_SECRET: z.string().min(16, 'JWT_ACCESS_SECRET must be at least 16 chars'),
   JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be at least 16 chars'),
   SMTP_URL: z.string().min(1, 'SMTP_URL is required'),
+  MAIL_FROM: z.string().default('Verso <no-reply@verso.local>'),
 });
 
 const result = schema.safeParse(process.env);
