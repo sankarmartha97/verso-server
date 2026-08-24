@@ -5,10 +5,18 @@ const REFRESH_COOKIE = 'refreshToken';
 // (VITE_API_URL, e.g. /api) that the proxy strips server-side but the
 // browser never sees stripped, so a cookie scoped to '/auth' would never
 // actually match the request path the browser sends it against.
+//
+// sameSite: in dev, client and server share an origin (Vite's proxy), so
+// 'lax' is fine. In production (two separate Render services, different
+// *.onrender.com subdomains -- almost certainly different "sites" per the
+// public suffix list, the same reason vercel.app/github.io do this), the
+// cookie needs 'none' or the browser drops it on every cross-site request,
+// silently breaking refresh. 'none' requires secure:true, which is already
+// production-only below, so the two can't end up mismatched.
 const REFRESH_COOKIE_OPTS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   path: '/',
   maxAge: 30 * 24 * 60 * 60 * 1000,
 };
@@ -44,7 +52,9 @@ async function refresh(req, res) {
 
 async function logout(req, res) {
   await authService.logout(req.cookies[REFRESH_COOKIE]);
-  res.clearCookie(REFRESH_COOKIE, { path: '/' });
+  // Matching sameSite/secure, not just path: browsers can otherwise treat
+  // this as a different cookie and leave the original one in place.
+  res.clearCookie(REFRESH_COOKIE, { path: '/', sameSite: REFRESH_COOKIE_OPTS.sameSite, secure: REFRESH_COOKIE_OPTS.secure });
   res.status(204).end();
 }
 

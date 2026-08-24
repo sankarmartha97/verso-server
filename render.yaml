@@ -1,0 +1,45 @@
+# Render Blueprint for verso-server. Field names match Render's blueprint
+# spec as of writing -- if Render rejects something here, its dashboard's
+# "New Web Service" flow covers the same settings manually; this file is a
+# reproducible starting point, not the only way to deploy this service.
+#
+# Provisions the web service only. Postgres/Redis are created separately as
+# Render's own managed services (Blueprints can define those too, but a
+# database holds real data across deploys -- creating it by hand once, then
+# just referencing its connection string here, avoids a blueprint re-apply
+# ever being able to touch it) and their connection strings are pasted in
+# via the Render dashboard (the `sync: false` vars below).
+services:
+  - type: web
+    name: verso-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start
+    preDeployCommand: npm run migrate
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Set to the deployed verso-client service's exact origin (no trailing
+      # slash) once that service exists -- '*' + credentials:true is invalid
+      # per the CORS spec, so this can't be left at the .env.example default.
+      - key: CORS_ORIGIN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_KEY
+        sync: false
+      - key: S3_SECRET
+        sync: false
+      - key: SMTP_URL
+        sync: false
