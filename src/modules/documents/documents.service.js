@@ -104,7 +104,7 @@ async function create(ownerId, { title, folderId }) {
 }
 
 async function update(userId, id, { title, folderId, starred }) {
-  const { doc, role } = await loadForUser(userId, id, starred !== undefined ? 'view' : 'edit');
+  const { doc: _doc, role } = await loadForUser(userId, id, starred !== undefined ? 'view' : 'edit');
 
   const patch = {};
   if (title !== undefined) {
