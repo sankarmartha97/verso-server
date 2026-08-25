@@ -19,7 +19,13 @@ const { searchQuerySchema } = require('./contracts/schemas/document.schema.js');
 const app = express();
 
 app.use(requestId);
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
+// CORS_ORIGIN is comma-separated so dev can allow both localhost and a LAN
+// IP (e.g. for cross-device testing) at once -- the cors package needs an
+// array, not a single string, to match against more than one origin.
+const corsOrigin = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+  : '*';
+app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
