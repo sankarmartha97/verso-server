@@ -63,11 +63,18 @@ async function signup({ email, password, name }, meta) {
     email_verify_expires_at: new Date(Date.now() + VERIFY_TOKEN_TTL_MS),
   });
 
-  await sendMail({
-    to: user.email,
-    subject: 'Verify your Verso account',
-    html: `<p>Welcome to Verso. Verify your email:</p><p><a href="${CLIENT_ORIGIN}/verify-email?token=${verifyToken}">${CLIENT_ORIGIN}/verify-email?token=${verifyToken}</a></p>`,
-  });
+  try {
+    await sendMail({
+      to: user.email,
+      subject: 'Verify your Verso account',
+      html: `<p>Welcome to Verso. Verify your email:</p><p><a href="${CLIENT_ORIGIN}/verify-email?token=${verifyToken}">${CLIENT_ORIGIN}/verify-email?token=${verifyToken}</a></p>`,
+    });
+  } catch (err) {
+    // Account creation shouldn't fail because the mail provider is down or
+    // unconfigured -- login doesn't check email_verified, so this is
+    // non-blocking by design; the user just won't have gotten the email.
+    console.error('signup: failed to send verification email', err);
+  }
 
   // Any documents shared to this email address before the account existed
   // (a pending invite, permissions.user_id NULL) become real grants now.
@@ -160,11 +167,17 @@ async function requestReset({ email }) {
     reset_token_expires_at: new Date(Date.now() + RESET_TOKEN_TTL_MS),
   });
 
-  await sendMail({
-    to: user.email,
-    subject: 'Reset your Verso password',
-    html: `<p>Reset your password:</p><p><a href="${CLIENT_ORIGIN}/reset-password?token=${resetToken}">${CLIENT_ORIGIN}/reset-password?token=${resetToken}</a></p>`,
-  });
+  try {
+    await sendMail({
+      to: user.email,
+      subject: 'Reset your Verso password',
+      html: `<p>Reset your password:</p><p><a href="${CLIENT_ORIGIN}/reset-password?token=${resetToken}">${CLIENT_ORIGIN}/reset-password?token=${resetToken}</a></p>`,
+    });
+  } catch (err) {
+    // Matches the no-user-enumeration contract above: this endpoint always
+    // succeeds from the caller's perspective, mail provider issues included.
+    console.error('requestReset: failed to send reset email', err);
+  }
 }
 
 async function reset({ token, password }) {
