@@ -18,6 +18,12 @@ const { searchQuerySchema } = require('./contracts/schemas/document.schema.js');
 
 const app = express();
 
+// Render (like most PaaS) puts the app behind a reverse proxy, so the socket's
+// remote address is always the proxy's, not the client's. Without this,
+// req.ip is the same for every request, which collapses the per-IP rate
+// limiter below into one shared bucket across all users.
+app.set('trust proxy', 1);
+
 app.use(requestId);
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
 app.use(express.json());
