@@ -49,13 +49,16 @@ async function invite(document, inviter, { email, role }) {
     : await permissionRepository.upsertForEmail(document.id, email, role);
 
   const docUrl = `${CLIENT_ORIGIN}/documents/${document.id}`;
-  await sendMail({
+  // Not awaited -- matches auth.service.js's signup()/requestReset(): the
+  // permission grant is already committed above, so a mail provider
+  // failure shouldn't block/500 the invite itself.
+  sendMail({
     to: email,
     subject: `${inviter.name || inviter.email} shared "${document.title}" with you on Verso`,
     html: existingUser
       ? `<p>${inviter.name || inviter.email} gave you ${role} access to "${document.title}".</p><p><a href="${docUrl}">${docUrl}</a></p>`
       : `<p>${inviter.name || inviter.email} shared "${document.title}" with you on Verso. Sign up with this email to get access.</p><p><a href="${CLIENT_ORIGIN}/signup">${CLIENT_ORIGIN}/signup</a></p>`,
-  });
+  }).catch((err) => console.error('invite: failed to send notification email', err));
 
   if (existingUser) await publishPermissionChange(document.id, existingUser.id, role);
 

@@ -90,6 +90,25 @@ function handleMessage(ws, room, data) {
 }
 
 async function handleConnection(ws, documentId, token) {
+  // The WS upgrade (sync.module.js's wss.handleUpgrade) completes -- and a
+  // client is free to start sending frames -- before the awaits below
+  // (auth + room lookup, both real DB round trips) finish. Every standard
+  // Yjs client sends its opening SyncStep1 the instant the connection
+  // opens, so attach the listener immediately and buffer anything that
+  // arrives before setup is done; otherwise that opening message is lost
+  // (Node's EventEmitter doesn't buffer events fired before a listener
+  // subscribes) and the client never receives the document's content.
+  let room = null;
+  const pending = [];
+  const dispatch = (data) => {
+    try {
+      handleMessage(ws, room, data);
+    } catch (err) {
+      console.error(`sync message error for ${documentId}:`, err);
+    }
+  };
+  ws.on('message', (data) => (room ? dispatch(data) : pending.push(data)));
+
   const auth = await authenticate(documentId, token);
   if (!auth) {
     ws.close(4401, 'Unauthorized');
@@ -98,19 +117,13 @@ async function handleConnection(ws, documentId, token) {
   ws.userId = auth.userId;
   ws.role = auth.role;
 
-  const room = await roomManager.getOrCreateRoom(documentId);
+  room = await roomManager.getOrCreateRoom(documentId);
   roomManager.addClient(room, ws);
 
   sendSyncStep1(ws, room.ydoc);
   sendAwarenessStates(ws, room.awareness);
 
-  ws.on('message', (data) => {
-    try {
-      handleMessage(ws, room, data);
-    } catch (err) {
-      console.error(`sync message error for ${documentId}:`, err);
-    }
-  });
+  for (const data of pending) dispatch(data);
 
   ws.on('close', () => {
     roomManager.removeClient(room, ws);

@@ -11,7 +11,13 @@ const {
   resetSchema,
 } = require('../../contracts/schemas/auth.schema.js');
 
-const authRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, keyPrefix: 'auth' });
+// Configurable so local dev (repeated manual testing) doesn't get locked out
+// for 15 minutes at a time -- defaults to the production value if unset.
+const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,
+  keyPrefix: 'auth',
+});
 
 const router = express.Router();
 
