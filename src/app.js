@@ -25,7 +25,14 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(requestId);
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
+// When CORS_ORIGIN is unset or '*', reflect the request Origin back so that
+// credentialed requests (credentials: 'include') are not blocked by browsers
+// — they reject Access-Control-Allow-Origin: * with credentials. In
+// production, set CORS_ORIGIN to the exact client origin to lock it down.
+const corsOrigin = process.env.CORS_ORIGIN && process.env.CORS_ORIGIN.trim() !== '*'
+  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+  : true;
+app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
